@@ -12068,10 +12068,10 @@ window.Cloud = (function () {
     opts = opts || {};
     if (!cloudReady() || syncing) return Promise.resolve();
     syncing = true;
+    var cloudCount = 0;
     return Cloud.ensure().then(function () {
       return pullLookNow();
     }).then(function () {
-      var cloudCount = 0;
       return Cloud.pull().then(function (rows) {
         var cloud = rows && rows[0] ? rows[0].data : null;
         cloudCount = (cloud && cloud.attempts) ? Object.keys(cloud.attempts).length : 0;
