@@ -10823,7 +10823,8 @@ window.QUESTIONS = [
 ];
 
 </script>
-<script>
+<script>window.AIQ_CLOUD = { url: "https://whljvycyrmgmepqcydih.supabase.co", key: "sb_publishable_rBGPyr7NXtMniLZXIa2U2A_hg_o_qDF" };</script>
+  <script>
 /* ============================================================
    计AI · 刷题器  —  云端账号与同步（Supabase REST，无依赖）
    只用 anon key + 用户 access_token；数据表 quiz_state，RLS 只允许本人读写
@@ -10833,9 +10834,20 @@ window.Cloud = (function () {
 
   var CFG_KEY = "aiq.cloud";
   var SES_KEY = "aiq.sess";
+  var BUILTIN = (window.AIQ_CLOUD && /^https:\/\//.test(String(window.AIQ_CLOUD.url || "")) && String(window.AIQ_CLOUD.key || "").length > 20)
+    ? { url: String(window.AIQ_CLOUD.url).replace(/\/+$/, ""), key: String(window.AIQ_CLOUD.key) }
+    : null;
 
-  function getCfg() {
+  function rawCfg() {
     try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function getCfg() {
+    var c = rawCfg();
+    if (c && c.url && c.key) return c;
+    return BUILTIN ? { url: BUILTIN.url, key: BUILTIN.key } : (c || {});
+  }
+  function resetCfg() {
+    try { localStorage.removeItem(CFG_KEY); } catch (e) { /* 忽略 */ }
   }
   function setCfg(cfg) {
     try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg || {})); } catch (e) { /* 忽略 */ }
@@ -10914,6 +10926,8 @@ window.Cloud = (function () {
     configured: configured,
     getCfg: getCfg,
     setCfg: setCfg,
+    resetCfg: resetCfg,
+    builtin: !!BUILTIN,
     user: function () {
       var s = getSess();
       return (s && s.user) || null;
@@ -11557,13 +11571,14 @@ window.Cloud = (function () {
     var cfg = window.Cloud ? Cloud.getCfg() : {};
     var u = window.Cloud ? Cloud.user() : null;
     var accHtml;
-    if (!window.Cloud || !Cloud.configured()) {
+    if (!window.Cloud || !Cloud.configured() || meCfgOpen) {
       accHtml =
         '<p class="modal-note">填一次 Supabase 项目的地址和 anon key，就能注册 / 登录，并在不同设备之间合并进度。数据存在你自己的项目里，只有本人能读写。</p>' +
         '<label class="field"><b>Project URL</b><input id="meUrl" placeholder="https://xxxx.supabase.co" value="' + escAttr(cfg.url) + '"></label>' +
         '<label class="field"><b>anon public key</b><input id="meKey" placeholder="sb_publishable_... 或 eyJ..." value="' + escAttr(cfg.key) + '"></label>' +
         '<div class="form-msg" id="meMsg"></div>' +
-        '<div class="acct-row"><button class="btn btn-primary" data-act="me-cfg-save">保存配置</button></div>';
+        '<div class="acct-row"><button class="btn btn-primary" data-act="me-cfg-save">保存配置</button>' +
+        (Cloud.configured() ? '<button class="btn btn-ghost" data-act="me-cfg-cancel">取消</button>' : '') + '</div>';
     } else if (!u) {
       accHtml =
         '<div class="seg">' +
@@ -11574,7 +11589,8 @@ window.Cloud = (function () {
         '<label class="field"><b>邮箱</b><input id="meEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>' +
         '<label class="field"><b>密码</b><input id="mePw" type="password" autocomplete="' + (meMode === "signin" ? "current-password" : "new-password") + '" placeholder="至少 6 位"></label>' +
         '<div class="form-msg" id="meMsg"></div>' +
-        '<div class="acct-row"><button class="btn btn-primary" data-act="me-auth">' + (meMode === "signin" ? "登录" : "注册") + '</button></div>';
+        '<div class="acct-row"><button class="btn btn-primary" data-act="me-auth">' + (meMode === "signin" ? "登录" : "注册") + '</button></div>' +
+        '<p class="modal-note" style="margin-top:10px"><button class="link-btn" data-act="me-cfg-open">重新配置云端</button></p>';
     } else {
       accHtml =
         '<div class="acct-box"><div class="acct-mail">' + esc(u.email || "已登录") + '</div>' +
@@ -11775,6 +11791,7 @@ window.Cloud = (function () {
       if (!/^https:\/\/.+/.test(murl)) { meMsg("Project URL 需以 https:// 开头"); return; }
       if (mkey.length < 20) { meMsg("anon key 看起来不对，请重新复制"); return; }
       Cloud.setCfg({ url: murl, key: mkey });
+      meCfgOpen = false;
       updateAcctUI();
       renderMe();
       toast("云端配置已保存");
@@ -11793,9 +11810,20 @@ window.Cloud = (function () {
       toast("已退出登录，进度仍在本机");
       return;
     }
+    if (act === "me-cfg-open") {
+      meCfgOpen = true;
+      renderMe();
+      return;
+    }
+    if (act === "me-cfg-cancel") {
+      meCfgOpen = false;
+      renderMe();
+      return;
+    }
     if (act === "me-cfg-reset") {
       Cloud.signOut();
-      Cloud.setCfg({});
+      Cloud.resetCfg();
+      meCfgOpen = true;
       updateAcctUI();
       renderMe();
       return;
@@ -11942,6 +11970,7 @@ window.Cloud = (function () {
   var syncing = false;
   var acctMode = "signin";
   var meMode = "signin";
+  var meCfgOpen = false;
   var modalView = "acct";
 
   function cloudReady() {
