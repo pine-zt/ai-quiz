@@ -10967,6 +10967,18 @@ window.Cloud = (function () {
     pull: function () {
       return req("/rest/v1/quiz_state?select=user_id,data,updated_at");
     },
+    pullLook: function () {
+      return req("/rest/v1/quiz_look?select=user_id,img,ts");
+    },
+    pushLook: function (img, ts) {
+      var u = this.user();
+      if (!u) return Promise.reject(new Error("未登录"));
+      return req("/rest/v1/quiz_look?on_conflict=user_id", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        body: { user_id: u.id, img: String(img || ""), ts: Number(ts) || 0, updated_at: new Date().toISOString() }
+      });
+    },
     push: function (data) {
       var u = this.user();
       if (!u) return Promise.reject(new Error("未登录"));
@@ -11594,7 +11606,7 @@ window.Cloud = (function () {
     } else {
       accHtml =
         '<div class="acct-box"><div class="acct-mail">' + esc(u.email || "已登录") + '</div>' +
-        '<div class="acct-sub" id="meSyncMsg">登录后会自动合并各设备的进度</div></div>' +
+        '<div class="acct-sub' + (lastSyncOk ? " ok" : "") + '" id="meSyncMsg">' + esc(lastSyncText) + '</div></div>' +
         '<div class="acct-row"><button class="btn btn-primary" data-act="me-sync">立即同步</button>' +
         '<button class="btn btn-ghost" data-act="me-signout">退出登录</button></div>' +
         '<p class="modal-note" style="margin-top:10px"><button class="link-btn" data-act="me-cfg-reset">重新配置云端</button></p>';
@@ -11800,7 +11812,7 @@ window.Cloud = (function () {
     if (act === "me-auth") { meAuth(); return; }
     if (act === "me-sync") {
       setSyncMsg("同步中…", true);
-      syncNow({ render: false }).then(function () { renderMe(); });
+      syncNow({ render: true });
       return;
     }
     if (act === "me-signout") {
@@ -11866,6 +11878,7 @@ window.Cloud = (function () {
       state.look = { img: "", ts: Date.now() };
       save();
       applyLook();
+      pushLookNow();
       renderMe();
       toast("已恢复默认背景");
       return;
@@ -11973,6 +11986,29 @@ window.Cloud = (function () {
   var meCfgOpen = false;
   var modalView = "acct";
 
+  function pushLookNow() {
+    if (!cloudReady() || !window.Cloud || !Cloud.pushLook) return;
+    var look = state.look || { img: "", ts: 0 };
+    Cloud.pushLook(look.img || "", look.ts || 0).then(function () {
+      setSyncMsg("背景已同步到云端", true);
+    }).catch(function (e) {
+      setSyncMsg("背景同步失败：" + ((e && e.message) || "未知错误"), false);
+    });
+  }
+
+  function pullLookNow() {
+    if (!cloudReady() || !window.Cloud || !Cloud.pullLook) return Promise.resolve();
+    return Cloud.pullLook().then(function (rows) {
+      var row = rows && rows[0];
+      if (!row || !row.img) return;
+      if ((row.ts || 0) > (((state.look && state.look.ts) || 0))) {
+        state.look = { img: row.img, ts: row.ts };
+        save();
+        applyLook();
+      }
+    }).catch(function () { /* 忽略：老项目可能还没建表 */ });
+  }
+
   function cloudReady() {
     return !!(window.Cloud && Cloud.configured() && Cloud.user());
   }
@@ -12033,8 +12069,12 @@ window.Cloud = (function () {
     if (!cloudReady() || syncing) return Promise.resolve();
     syncing = true;
     return Cloud.ensure().then(function () {
+      return pullLookNow();
+    }).then(function () {
+      var cloudCount = 0;
       return Cloud.pull().then(function (rows) {
         var cloud = rows && rows[0] ? rows[0].data : null;
+        cloudCount = (cloud && cloud.attempts) ? Object.keys(cloud.attempts).length : 0;
         var merged = mergeCloud(state, cloud);
         state.attempts = merged.attempts;
         state.days = merged.days;
@@ -12045,7 +12085,7 @@ window.Cloud = (function () {
         return Cloud.push(payload());
       });
     }).then(function () {
-      setSyncMsg("已同步 · " + new Date().toTimeString().slice(0, 5), true);
+      setSyncMsg("已同步 · 云端 " + cloudCount + " 题 · " + new Date().toTimeString().slice(0, 5), true);
       if (opts.render) render();
     }).catch(function (e) {
       setSyncMsg((e && e.message) || "同步失败", false);
@@ -12082,9 +12122,16 @@ window.Cloud = (function () {
     }
   }
 
+  var lastSyncText = "登录后会自动合并各设备的进度";
+  var lastSyncOk = false;
+
   function setSyncMsg(text, ok) {
-    var el = document.getElementById("syncMsg");
-    if (el) { el.textContent = text; el.classList.toggle("ok", !!ok); }
+    lastSyncText = text || "";
+    lastSyncOk = !!ok;
+    ["syncMsg", "meSyncMsg"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { el.textContent = lastSyncText; el.classList.toggle("ok", lastSyncOk); }
+    });
   }
 
   function escAttr(s) {
@@ -12134,7 +12181,7 @@ window.Cloud = (function () {
         save();
         applyLook();
         refreshViews();
-        scheduleSync();
+        pushLookNow();
         toast("背景已更新（" + Math.round(url.length / 1024) + " KB）");
       };
       img.onerror = function () { toast("这张图读不出来，换一张试试"); };
