@@ -75,6 +75,41 @@
 
 * { box-sizing: border-box; }
 
+/* ---------- 字体选项 ---------- */
+:root[data-font="serif"] { --font: "Songti SC", "SimSun", "Noto Serif SC", Georgia, serif; }
+:root[data-font="kai"] { --font: "KaiTi", "STKaiti", "Kaiti SC", "楷体", serif; }
+:root[data-font="mono"] { --font: var(--mono); }
+.font-seg button { font-size: 13.5px; }
+.font-seg button[data-font="serif"] { font-family: "Songti SC", "SimSun", serif; }
+.font-seg button[data-font="kai"] { font-family: "KaiTi", "STKaiti", serif; }
+.font-seg button[data-font="mono"] { font-family: var(--mono); }
+
+/* ---------- 自定义背景图 ---------- */
+:root { --user-bg: none; --bg-veil: rgba(6, 8, 14, 0.45); }
+:root[data-theme="paper"] { --bg-veil: rgba(250, 247, 240, 0.55); }
+html.has-bg body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -1;
+  background: linear-gradient(var(--bg-veil), var(--bg-veil)), var(--user-bg) center / cover no-repeat;
+  background-color: var(--bg);
+  filter: blur(2px) saturate(1.05);
+  transform: scale(1.03);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.9) 22%, transparent 52%);
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.9) 22%, transparent 52%);
+}
+html.has-bg .hero { background-color: color-mix(in srgb, var(--panel-solid) 62%, transparent); }
+html.has-bg .chapter-card,
+html.has-bg .stat,
+html.has-bg .panel,
+html.has-bg .q-card { background-color: color-mix(in srgb, var(--panel-solid) 86%, transparent); }
+.look-preview {
+  width: 100%; height: 150px; border-radius: 13px; border: 1px solid var(--line);
+  background: var(--bg-soft) center / cover no-repeat; display: grid; place-items: center;
+  color: var(--muted); font-size: 12.5px; overflow: hidden;
+}
+.look-preview.has-img { color: transparent; }
+.avatar-row.look-row { align-items: center; }
+
 html, body { margin: 0; padding: 0; }
 
 body {
@@ -595,6 +630,7 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
 
 /* ---------- 账号与同步弹窗 ---------- */
 .icon-btn { position: relative; }
+.acct-img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; display: block; }
 .acct-dot {
   position: absolute; right: 7px; top: 7px; width: 7px; height: 7px;
   border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--bg);
@@ -631,6 +667,11 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
 .acct-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.65; }
 .acct-row { display: flex; gap: 10px; margin-top: 12px; }
 .acct-row .btn { flex: 1; }
+.avatar-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-soft); }
+.avatar-preview { width: 46px; height: 46px; border-radius: 50%; flex: none; display: grid; place-items: center; overflow: hidden; background: var(--panel-hover); color: var(--muted); font-size: 22px; }
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-ops { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.btn-sm { padding: 8px 14px; font-size: 13px; }
 .link-btn { border: 0; background: none; color: var(--accent-2); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0; }
 @media (max-width: 720px) {
   .modal { align-items: flex-end; padding: 0; }
@@ -657,11 +698,13 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
       <a href="#/practice" data-nav="practice">练习</a>
       <a href="#/review" data-nav="review">错题本</a>
       <a href="#/stats" data-nav="stats">数据</a>
+      <a href="#/me" data-nav="me">个人</a>
       <a href="#/about" data-nav="about">关于</a>
     </nav>
 
     <div class="topbar-actions">
       <button class="icon-btn" id="acctBtn" title="账号与同步" aria-label="账号与同步">
+        <img id="acctImg" class="acct-img" alt="" hidden />
         <span id="acctIcon">☺</span>
         <i class="acct-dot" id="acctDot" hidden></i>
       </button>
@@ -10945,6 +10988,7 @@ window.Cloud = (function () {
   var footCount = document.getElementById("footCount");
   var acctBtn = document.getElementById("acctBtn");
   var acctIcon = document.getElementById("acctIcon");
+  var acctImg = document.getElementById("acctImg");
   var acctDot = document.getElementById("acctDot");
   var modal = document.getElementById("modal");
   var modalBody = document.getElementById("modalBody");
@@ -10957,7 +11001,9 @@ window.Cloud = (function () {
       skin: "ink",
       streak: 0,
       bestStreak: 0,
-      days: {}
+      days: {},
+      profile: {},
+      look: { img: "", ts: 0 },
     };
   }
 
@@ -10969,7 +11015,7 @@ window.Cloud = (function () {
       if (!raw) return defaultState();
       var s = JSON.parse(raw);
       var d = defaultState();
-      return Object.assign(d, s, { attempts: s.attempts || {}, days: s.days || {} });
+      return Object.assign(d, s, { attempts: s.attempts || {}, days: s.days || {}, profile: s.profile || {}, look: s.look || { img: "", ts: 0 } });
     } catch (e) {
       return defaultState();
     }
@@ -11498,6 +11544,70 @@ window.Cloud = (function () {
       '</div>';
   }
 
+  /* ---------------- 个人页 ---------------- */
+  function fontOf() { return state.font || "default"; }
+
+  function applyFont() {
+    var f = fontOf();
+    if (f === "default") document.documentElement.removeAttribute("data-font");
+    else document.documentElement.setAttribute("data-font", f);
+  }
+
+  function renderMe() {
+    var cfg = window.Cloud ? Cloud.getCfg() : {};
+    var u = window.Cloud ? Cloud.user() : null;
+    var accHtml;
+    if (!window.Cloud || !Cloud.configured()) {
+      accHtml =
+        '<p class="modal-note">填一次 Supabase 项目的地址和 anon key，就能注册 / 登录，并在不同设备之间合并进度。数据存在你自己的项目里，只有本人能读写。</p>' +
+        '<label class="field"><b>Project URL</b><input id="meUrl" placeholder="https://xxxx.supabase.co" value="' + escAttr(cfg.url) + '"></label>' +
+        '<label class="field"><b>anon public key</b><input id="meKey" placeholder="sb_publishable_... 或 eyJ..." value="' + escAttr(cfg.key) + '"></label>' +
+        '<div class="form-msg" id="meMsg"></div>' +
+        '<div class="acct-row"><button class="btn btn-primary" data-act="me-cfg-save">保存配置</button></div>';
+    } else if (!u) {
+      accHtml =
+        '<div class="seg">' +
+          '<button class="' + (meMode === "signin" ? "on" : "") + '" data-act="me-mode" data-mode="signin">登录</button>' +
+          '<button class="' + (meMode === "signup" ? "on" : "") + '" data-act="me-mode" data-mode="signup">注册</button>' +
+        '</div>' +
+        '<p class="modal-note">' + (meMode === "signin" ? "用邮箱和密码登录，登录后会把云端进度和本机进度合并。" : "注册后若没收到确认邮件，先看垃圾邮件；也可以回 Supabase 关掉邮件确认。") + '</p>' +
+        '<label class="field"><b>邮箱</b><input id="meEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>' +
+        '<label class="field"><b>密码</b><input id="mePw" type="password" autocomplete="' + (meMode === "signin" ? "current-password" : "new-password") + '" placeholder="至少 6 位"></label>' +
+        '<div class="form-msg" id="meMsg"></div>' +
+        '<div class="acct-row"><button class="btn btn-primary" data-act="me-auth">' + (meMode === "signin" ? "登录" : "注册") + '</button></div>';
+    } else {
+      accHtml =
+        '<div class="acct-box"><div class="acct-mail">' + esc(u.email || "已登录") + '</div>' +
+        '<div class="acct-sub" id="meSyncMsg">登录后会自动合并各设备的进度</div></div>' +
+        '<div class="acct-row"><button class="btn btn-primary" data-act="me-sync">立即同步</button>' +
+        '<button class="btn btn-ghost" data-act="me-signout">退出登录</button></div>' +
+        '<p class="modal-note" style="margin-top:10px"><button class="link-btn" data-act="me-cfg-reset">重新配置云端</button></p>';
+    }
+    var av = avatarSrc();
+    var nick = (state.profile && state.profile.name) || "";
+    var limg = (state.look && state.look.img) || "";
+    var fontBtn = function (id, label) {
+      return '<button class="' + (fontOf() === id ? "on" : "") + '" data-act="me-font" data-font="' + id + '">' + label + '</button>';
+    };
+    view.innerHTML =
+      '<div class="section-head" style="margin-top:6px"><h2>个人</h2><span class="hint">账号 · 昵称 · 外观</span></div>' +
+      '<div class="panel"><div class="section-head" style="margin:0 0 10px"><h2 style="font-size:14px">账号</h2><span class="hint">' + (u ? "已登录" : "未登录") + '</span></div>' + accHtml + '</div>' +
+      '<div class="panel"><div class="section-head" style="margin:0 0 10px"><h2 style="font-size:14px">昵称</h2><span class="hint">会用来称呼你</span></div>' +
+        '<label class="field"><b>昵称</b><input id="meName" maxlength="12" placeholder="给自己起个名字" value="' + escAttr(nick) + '"></label>' +
+        '<div class="acct-row"><button class="btn btn-ghost" data-act="me-name-save">保存昵称</button></div></div>' +
+      '<div class="panel"><div class="section-head" style="margin:0 0 10px"><h2 style="font-size:14px">头像</h2><span class="hint">同步到云端</span></div>' +
+        '<div class="avatar-row"><span class="avatar-preview">' + (av ? '<img src="' + escAttr(av) + '" alt="头像">' : "☺") + '</span>' +
+        '<span class="avatar-ops"><button class="btn btn-ghost btn-sm" data-act="me-avatar-pick">选择图片</button>' +
+        '<button class="link-btn" data-act="me-avatar-clear">移除</button></span>' +
+        '<input type="file" id="meAvatarFile" accept="image/*" hidden></div></div>' +
+      '<div class="panel"><div class="section-head" style="margin:0 0 10px"><h2 style="font-size:14px">字体</h2><span class="hint">只影响这台设备</span></div>' +
+        '<div class="seg font-seg">' + fontBtn("default", "默认") + fontBtn("serif", "宋体") + fontBtn("kai", "楷体") + fontBtn("mono", "等宽") + '</div></div>' +
+      '<div class="panel"><div class="section-head" style="margin:0 0 10px"><h2 style="font-size:14px">背景</h2><span class="hint">只影响这台设备</span></div>' +
+        '<div class="look-preview' + (limg ? " has-img" : "") + '"' + (limg ? ' style="background-image:url(\'' + escAttr(limg) + '\')"' : "") + '>' + (limg ? "" : "还没有设置背景") + '</div>' +
+        '<div class="acct-row"><button class="btn btn-ghost" data-act="me-bg-pick">选择图片</button><button class="btn btn-ghost" data-act="me-bg-clear">恢复默认</button></div>' +
+        '<input type="file" id="meBgFile" accept="image/*" hidden></div>';
+  }
+
   /* ---------------- 渲染路由 ---------------- */
   function render() {
     var h = hashTo();
@@ -11533,7 +11643,7 @@ window.Cloud = (function () {
 
     document.body.dataset.route = path;
 
-    var navMap = { "/practice": "practice", "/review": "review", "/stats": "stats", "/about": "about", "/quiz": "practice", "/result": "practice" };
+    var navMap = { "/practice": "practice", "/review": "review", "/stats": "stats", "/me": "me", "/about": "about", "/quiz": "practice", "/result": "practice" };
     Array.prototype.forEach.call(nav.querySelectorAll("a"), function (a) {
       a.classList.toggle("active", a.getAttribute("data-nav") === navMap[path]);
     });
@@ -11544,6 +11654,7 @@ window.Cloud = (function () {
     else if (path === "/result") renderResult();
     else if (path === "/review") renderReview();
     else if (path === "/stats") renderStats();
+    else if (path === "/me") renderMe();
     else if (path === "/about") renderAbout();
     else { location.hash = "/home"; }
 
@@ -11651,7 +11762,165 @@ window.Cloud = (function () {
       toast("已退出登录，进度仍在本机");
       return;
     }
+    if (act === "me-mode") {
+      meMode = t.getAttribute("data-mode") || "signin";
+      renderMe();
+      return;
+    }
+    if (act === "me-cfg-save") {
+      var mu = document.getElementById("meUrl");
+      var mk = document.getElementById("meKey");
+      var murl = (mu && mu.value || "").trim().replace(/\/+$/, "");
+      var mkey = (mk && mk.value || "").trim();
+      if (!/^https:\/\/.+/.test(murl)) { meMsg("Project URL 需以 https:// 开头"); return; }
+      if (mkey.length < 20) { meMsg("anon key 看起来不对，请重新复制"); return; }
+      Cloud.setCfg({ url: murl, key: mkey });
+      updateAcctUI();
+      renderMe();
+      toast("云端配置已保存");
+      return;
+    }
+    if (act === "me-auth") { meAuth(); return; }
+    if (act === "me-sync") {
+      setSyncMsg("同步中…", true);
+      syncNow({ render: false }).then(function () { renderMe(); });
+      return;
+    }
+    if (act === "me-signout") {
+      Cloud.signOut();
+      updateAcctUI();
+      renderMe();
+      toast("已退出登录，进度仍在本机");
+      return;
+    }
+    if (act === "me-cfg-reset") {
+      Cloud.signOut();
+      Cloud.setCfg({});
+      updateAcctUI();
+      renderMe();
+      return;
+    }
+    if (act === "me-name-save") {
+      var nameEl = document.getElementById("meName");
+      var nick = (nameEl && nameEl.value || "").trim().slice(0, 12);
+      state.profile = state.profile || {};
+      state.profile.name = nick;
+      state.profile.nameTs = Date.now();
+      save();
+      updateAcctUI();
+      scheduleSync();
+      renderMe();
+      toast(nick ? "昵称已保存" : "昵称已清空");
+      return;
+    }
+    if (act === "me-avatar-pick") {
+      var maf = document.getElementById("meAvatarFile");
+      if (maf) maf.click();
+      return;
+    }
+    if (act === "me-avatar-clear") {
+      state.profile = state.profile || {};
+      state.profile.avatar = "";
+      state.profile.avatarTs = Date.now();
+      save();
+      updateAcctUI();
+      renderMe();
+      scheduleSync();
+      toast("头像已移除");
+      return;
+    }
+    if (act === "me-bg-pick") {
+      var mbf = document.getElementById("meBgFile");
+      if (mbf) mbf.click();
+      return;
+    }
+    if (act === "me-bg-clear") {
+      state.look = { img: "", ts: Date.now() };
+      save();
+      applyLook();
+      renderMe();
+      toast("已恢复默认背景");
+      return;
+    }
+    if (act === "me-font") {
+      state.font = t.getAttribute("data-font") || "default";
+      save();
+      applyFont();
+      renderMe();
+      return;
+    }
+    if (act === "look-pick") {
+      var lf = document.getElementById("lookFile");
+      if (lf) lf.click();
+      return;
+    }
+    if (act === "look-clear") {
+      state.look = { img: "", ts: Date.now() };
+      save();
+      applyLook();
+      renderModal();
+      scheduleSync();
+      toast("已恢复默认背景");
+      return;
+    }
+    if (act === "avatar-pick") {
+      var f = document.getElementById("avatarFile");
+      if (f) f.click();
+      return;
+    }
+    if (act === "avatar-clear") {
+      state.profile = state.profile || {};
+      state.profile.avatar = "";
+      state.profile.avatarTs = Date.now();
+      save();
+      updateAcctUI();
+      renderModal();
+      scheduleSync();
+      toast("头像已移除");
+      return;
+    }
   });
+
+  if (view) {
+    view.addEventListener("change", function (e) {
+      if (!e.target) return;
+      if (e.target.id === "meAvatarFile") {
+        readAvatar(e.target.files && e.target.files[0], function (dataUrl) {
+          state.profile = state.profile || {};
+          state.profile.avatar = dataUrl;
+          state.profile.avatarTs = Date.now();
+          save();
+          updateAcctUI();
+          scheduleSync();
+          renderMe();
+          toast("头像已更新，正在同步");
+        });
+      } else if (e.target.id === "meBgFile") {
+        readLook(e.target.files && e.target.files[0]);
+      }
+    });
+  }
+
+  if (modalBody) {
+    modalBody.addEventListener("change", function (e) {
+      if (e.target && e.target.id === "lookFile") {
+        readLook(e.target.files && e.target.files[0]);
+        return;
+      }
+      if (!e.target || e.target.id !== "avatarFile") return;
+      var file = e.target.files && e.target.files[0];
+      readAvatar(file, function (dataUrl) {
+        state.profile = state.profile || {};
+        state.profile.avatar = dataUrl;
+        state.profile.avatarTs = Date.now();
+        save();
+        updateAcctUI();
+        renderModal();
+        scheduleSync();
+        toast("头像已更新，正在同步");
+      });
+    });
+  }
 
   /* ---------------- 皮肤 ---------------- */
   function applySkin(skin) {
@@ -11672,6 +11941,8 @@ window.Cloud = (function () {
   var syncTimer = null;
   var syncing = false;
   var acctMode = "signin";
+  var meMode = "signin";
+  var modalView = "acct";
 
   function cloudReady() {
     return !!(window.Cloud && Cloud.configured() && Cloud.user());
@@ -11695,6 +11966,20 @@ window.Cloud = (function () {
     });
     out.streak = Math.max(out.streak || 0, cloud.streak || 0);
     out.bestStreak = Math.max(out.bestStreak || 0, cloud.bestStreak || 0);
+    var cn = cloud.profile && cloud.profile.name;
+    var cnTs = (cloud.profile && cloud.profile.nameTs) || 0;
+    if (cn && cnTs > (((out.profile && out.profile.nameTs) || 0))) {
+      out.profile = out.profile || {};
+      out.profile.name = cn;
+      out.profile.nameTs = cnTs;
+    }
+    var av = cloud.profile && cloud.profile.avatar;
+    var avTs = (cloud.profile && cloud.profile.avatarTs) || 0;
+    if (av && avTs > (((out.profile && out.profile.avatarTs) || 0))) {
+      out.profile = out.profile || {};
+      out.profile.avatar = av;
+      out.profile.avatarTs = avTs;
+    }
     return out;
   }
 
@@ -11704,6 +11989,12 @@ window.Cloud = (function () {
       days: state.days,
       streak: state.streak,
       bestStreak: state.bestStreak,
+      profile: {
+        avatar: avatarSrc() || "",
+        avatarTs: (state.profile && state.profile.avatarTs) || 0,
+        name: (state.profile && state.profile.name) || "",
+        nameTs: (state.profile && state.profile.nameTs) || 0
+      },
       v: 1
     };
   }
@@ -11720,6 +12011,7 @@ window.Cloud = (function () {
         state.days = merged.days;
         state.streak = merged.streak;
         state.bestStreak = merged.bestStreak;
+        state.profile = merged.profile || state.profile || {};
         save();
         return Cloud.push(payload());
       });
@@ -11737,6 +12029,30 @@ window.Cloud = (function () {
     syncTimer = setTimeout(function () { syncNow({ render: false }); }, 1200);
   }
 
+  function refreshViews() {
+    updateAcctUI();
+    if (String(location.hash).indexOf("#/me") === 0) renderMe();
+  }
+
+  function meMsg(text, ok) {
+    var el = document.getElementById("meMsg");
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("ok", !!ok);
+  }
+
+  function applyLook() {
+    var img = (state.look && state.look.img) || "";
+    var root = document.documentElement;
+    if (img) {
+      root.classList.add("has-bg");
+      root.style.setProperty("--user-bg", 'url("' + img + '")');
+    } else {
+      root.classList.remove("has-bg");
+      root.style.removeProperty("--user-bg");
+    }
+  }
+
   function setSyncMsg(text, ok) {
     var el = document.getElementById("syncMsg");
     if (el) { el.textContent = text; el.classList.toggle("ok", !!ok); }
@@ -11746,15 +12062,86 @@ window.Cloud = (function () {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   }
 
+  function avatarSrc() {
+    return (state.profile && state.profile.avatar) || "";
+  }
+
   function updateAcctUI() {
     var u = window.Cloud ? Cloud.user() : null;
     if (acctDot) acctDot.hidden = !u;
+    var av = avatarSrc();
+    if (acctImg) {
+      if (av) {
+        acctImg.src = av;
+        acctImg.hidden = false;
+        if (acctIcon) acctIcon.hidden = true;
+      } else {
+        acctImg.removeAttribute("src");
+        acctImg.hidden = true;
+        if (acctIcon) acctIcon.hidden = false;
+      }
+    }
     if (acctIcon) acctIcon.textContent = u && u.email ? u.email.charAt(0).toUpperCase() : "☺";
-    if (acctBtn) acctBtn.title = u && u.email ? "已登录：" + u.email : "账号与同步";
+    var nick = (state.profile && state.profile.name) || "";
+    if (acctBtn) acctBtn.title = (nick ? nick + " · " : "") + (u && u.email ? u.email : "个人设置");
   }
 
-  function openModal() {
+  function readLook(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { toast("请选择图片文件"); return; }
+    if (file.size > 20 * 1024 * 1024) { toast("图片太大，换一张 20MB 以内的"); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var maxW = 1600;
+        var scale = Math.min(1, maxW / img.width);
+        var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        var c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        var url = c.toDataURL("image/jpeg", 0.72);
+        state.look = { img: url, ts: Date.now() };
+        save();
+        applyLook();
+        refreshViews();
+        scheduleSync();
+        toast("背景已更新（" + Math.round(url.length / 1024) + " KB）");
+      };
+      img.onerror = function () { toast("这张图读不出来，换一张试试"); };
+      img.src = reader.result;
+    };
+    reader.onerror = function () { toast("读文件失败"); };
+    reader.readAsDataURL(file);
+  }
+
+  function readAvatar(file, cb) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { toast("请选择图片文件"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast("图片太大，换一张 8MB 以内的"); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var S = 160;
+        var c = document.createElement("canvas");
+        c.width = S; c.height = S;
+        var ctx = c.getContext("2d");
+        var side = Math.min(img.width, img.height);
+        var sx = (img.width - side) / 2, sy = (img.height - side) / 2;
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, S, S);
+        cb(c.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = function () { toast("这张图读不出来，换一张试试"); };
+      img.src = reader.result;
+    };
+    reader.onerror = function () { toast("读文件失败"); };
+    reader.readAsDataURL(file);
+  }
+
+  function openModal(v) {
     if (!modal) return;
+    modalView = v || "acct";
     modal.hidden = false;
     renderModal();
   }
@@ -11772,11 +12159,23 @@ window.Cloud = (function () {
 
   function renderModal() {
     if (!modalBody) return;
+    var mtitle = document.getElementById("modalTitle");
+    if (mtitle) mtitle.textContent = modalView === "look" ? "背景图" : "账号";
     var cfg = window.Cloud ? Cloud.getCfg() : {};
     var u = window.Cloud ? Cloud.user() : null;
     var html = "";
 
-    if (!window.Cloud || !Cloud.configured()) {
+    if (modalView === "look") {
+      var limg = (state.look && state.look.img) || "";
+      html =
+        '<p class="modal-note">挑一张图当背景，会自动压到适合网页的大小，只影响这台设备（不同步到云端）。</p>' +
+        '<div class="look-preview' + (limg ? " has-img" : "") + '"' +
+          (limg ? ' style="background-image:url(\'' + escAttr(limg) + '\')"' : "") + '>' + (limg ? "" : "还没有设置背景") + '</div>' +
+        '<div class="acct-row"><button class="btn btn-primary" data-act="look-pick">选择图片</button>' +
+        '<button class="btn btn-ghost" data-act="look-clear">恢复默认</button></div>' +
+        '<input type="file" id="lookFile" accept="image/*" hidden>' +
+        '<p class="modal-note" style="margin-top:12px">建议横向图片；太亮或太花时，会压一层暗色遮罩保证文字可读。</p>';
+    } else if (!window.Cloud || !Cloud.configured()) {
       html =
         '<p class="modal-note">填一次 Supabase 项目的地址和 anon key，就能注册 / 登录，并在不同设备之间合并进度。数据存在你自己的项目里，只有本人能读写。</p>' +
         '<label class="field"><b>Project URL</b><input id="cfgUrl" placeholder="https://xxxx.supabase.co" value="' + escAttr(cfg.url) + '"></label>' +
@@ -11797,14 +12196,47 @@ window.Cloud = (function () {
         '<div class="modal-actions"><button class="btn btn-primary" data-act="auth-submit">' + (acctMode === "signin" ? "登录" : "注册") + '</button></div>' +
         '<p class="modal-note" style="margin-top:10px"><button class="link-btn" data-act="cfg-reset">重新配置云端</button> · 不登录时进度只存在本机</p>';
     } else {
+      var av = avatarSrc();
       html =
         '<div class="acct-box"><div class="acct-mail">' + esc(u.email || "已登录") + '</div>' +
         '<div class="acct-sub" id="syncMsg">登录后会自动合并各设备的进度</div></div>' +
+        '<div class="avatar-row">' +
+          '<span class="avatar-preview">' + (av ? '<img src="' + escAttr(av) + '" alt="头像">' : "☺") + '</span>' +
+          '<span class="avatar-ops">' +
+            '<button class="btn btn-ghost btn-sm" data-act="avatar-pick">更换头像</button>' +
+            '<button class="link-btn" data-act="avatar-clear">移除</button>' +
+          '</span>' +
+          '<input type="file" id="avatarFile" accept="image/*" hidden>' +
+        '</div>' +
         '<div class="acct-row"><button class="btn btn-primary" data-act="sync-now">立即同步</button>' +
         '<button class="btn btn-ghost" data-act="sign-out">退出登录</button></div>' +
-        '<p class="modal-note" style="margin-top:12px">数据存在你自己的 Supabase 项目（quiz_state 表）里，只有本人能读写。</p>';
+        '<p class="modal-note" style="margin-top:12px">头像会随进度一起同步到其他设备；图片会在本机压缩到 160×160。</p>';
     }
     modalBody.innerHTML = html;
+  }
+
+  function meAuth() {
+    var emailEl = document.getElementById("meEmail");
+    var pwEl = document.getElementById("mePw");
+    var email = (emailEl && emailEl.value || "").trim();
+    var pw = (pwEl && pwEl.value || "");
+    if (!email || !pw) { meMsg("请填写邮箱和密码"); return; }
+    meMsg("处理中…", true);
+    var p = meMode === "signin" ? Cloud.signIn(email, pw) : Cloud.signUp(email, pw);
+    p.then(function () {
+      if (meMode === "signup" && !Cloud.user()) {
+        meMsg("注册成功，请到邮箱点确认链接后再登录", true);
+        return;
+      }
+      updateAcctUI();
+      meMsg("登录成功，正在同步…", true);
+      return syncNow({ render: false }).then(function () {
+        renderMe();
+        toast("已登录，进度已合并");
+      });
+    }).catch(function (e) {
+      meMsg((e && e.message) || "操作失败");
+    });
   }
 
   function doAuth() {
@@ -11832,7 +12264,7 @@ window.Cloud = (function () {
     });
   }
 
-  if (acctBtn) acctBtn.addEventListener("click", openModal);
+  if (acctBtn) acctBtn.addEventListener("click", function () { location.hash = "/me"; });
   if (modal) {
     modal.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && (e.target.id === "authEmail" || e.target.id === "authPw")) {
@@ -11844,6 +12276,8 @@ window.Cloud = (function () {
 
   /* ---------------- 启动 ---------------- */
   applySkin(state.skin || "ink");
+  applyFont();
+  applyLook();
   updateAcctUI();
   if (footCount) footCount.textContent = QUESTIONS.length + " 道题 · " + CHAPTERS.length + " 个讲次";
   window.addEventListener("hashchange", render);
