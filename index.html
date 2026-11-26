@@ -593,6 +593,50 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
   * { animation: none !important; transition: none !important; }
 }
 
+/* ---------- 账号与同步弹窗 ---------- */
+.icon-btn { position: relative; }
+.acct-dot {
+  position: absolute; right: 7px; top: 7px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--bg);
+}
+.modal { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 18px; }
+.modal[hidden] { display: none; }
+.modal-mask { position: absolute; inset: 0; background: rgba(3, 5, 9, 0.6); backdrop-filter: blur(9px); }
+:root[data-theme="paper"] .modal-mask { background: rgba(40, 34, 24, 0.3); }
+.modal-card {
+  position: relative; width: min(430px, 100%); max-height: 86vh; overflow: auto;
+  background: var(--panel-solid); border: 1px solid var(--line); border-radius: 20px;
+  padding: 18px 18px 20px; box-shadow: var(--shadow); animation: pop 0.18s var(--ease);
+}
+@keyframes pop { from { transform: translateY(8px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.modal-head h2 { margin: 0; font-size: 17px; letter-spacing: 0.2px; }
+.modal-note { font-size: 12.5px; line-height: 1.7; color: var(--muted); margin: 2px 0 10px; }
+.seg { display: flex; gap: 6px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin: 6px 0 4px; }
+.seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 8px 0; border-radius: 9px; cursor: pointer; }
+.seg button.on { background: var(--panel-hover); color: var(--text); }
+.field { display: block; margin: 10px 0; }
+.field b { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+.field input {
+  width: 100%; height: 42px; border-radius: 11px; border: 1px solid var(--line-strong);
+  background: var(--bg-soft); color: var(--text); padding: 0 12px; font: inherit; font-size: 14px; outline: none;
+}
+.field input:focus { border-color: var(--accent); }
+.form-msg { min-height: 18px; font-size: 12.5px; color: var(--bad); margin: 6px 0 2px; line-height: 1.5; }
+.form-msg.ok { color: var(--ok); }
+.modal-actions { display: flex; gap: 10px; margin-top: 12px; }
+.modal-actions .btn { flex: 1; }
+.acct-box { border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: var(--bg-soft); }
+.acct-mail { font-size: 14px; font-weight: 600; word-break: break-all; }
+.acct-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.65; }
+.acct-row { display: flex; gap: 10px; margin-top: 12px; }
+.acct-row .btn { flex: 1; }
+.link-btn { border: 0; background: none; color: var(--accent-2); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0; }
+@media (max-width: 720px) {
+  .modal { align-items: flex-end; padding: 0; }
+  .modal-card { width: 100%; border-radius: 20px 20px 0 0; max-height: 88vh; padding-bottom: 26px; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d12'/%3E%3Cpath d='M18 44V20h6v24zm22 0V20h6v24z' fill='%23ff4d8d'/%3E%3C/svg%3E" />
 </head>
@@ -617,6 +661,10 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
     </nav>
 
     <div class="topbar-actions">
+      <button class="icon-btn" id="acctBtn" title="账号与同步" aria-label="账号与同步">
+        <span id="acctIcon">☺</span>
+        <i class="acct-dot" id="acctDot" hidden></i>
+      </button>
       <button class="icon-btn" id="themeBtn" title="切换皮肤" aria-label="切换皮肤">
         <span id="themeIcon">◐</span>
       </button>
@@ -635,6 +683,17 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
 </footer>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-mask" data-act="modal-close"></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h2 id="modalTitle">账号</h2>
+      <button class="icon-btn" data-act="modal-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
 
 <script>
 /* ============================================================
@@ -10723,6 +10782,149 @@ window.QUESTIONS = [
 </script>
 <script>
 /* ============================================================
+   计AI · 刷题器  —  云端账号与同步（Supabase REST，无依赖）
+   只用 anon key + 用户 access_token；数据表 quiz_state，RLS 只允许本人读写
+   ============================================================ */
+window.Cloud = (function () {
+  "use strict";
+
+  var CFG_KEY = "aiq.cloud";
+  var SES_KEY = "aiq.sess";
+
+  function getCfg() {
+    try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function setCfg(cfg) {
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg || {})); } catch (e) { /* 忽略 */ }
+  }
+  function getSess() {
+    try { return JSON.parse(localStorage.getItem(SES_KEY)) || null; } catch (e) { return null; }
+  }
+  function setSess(s) {
+    try {
+      if (s) localStorage.setItem(SES_KEY, JSON.stringify(s));
+      else localStorage.removeItem(SES_KEY);
+    } catch (e) { /* 忽略 */ }
+  }
+  function configured() {
+    var c = getCfg();
+    return !!(c.url && c.key);
+  }
+  function base() {
+    return String(getCfg().url || "").replace(/\/+$/, "");
+  }
+  function parse(text, r) {
+    var d = null;
+    try { d = text ? JSON.parse(text) : null; } catch (e) { d = text; }
+    if (!r.ok) {
+      var msg = (d && (d.msg || d.message || d.error_description || d.error)) || ("HTTP " + r.status);
+      var err = new Error(msg);
+      err.status = r.status;
+      err.data = d;
+      throw err;
+    }
+    return d;
+  }
+
+  function auth(path, body) {
+    var cfg = getCfg();
+    return fetch(base() + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": cfg.key },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.text().then(function (t) { return parse(t, r); });
+    });
+  }
+
+  function req(path, opts) {
+    opts = opts || {};
+    if (!configured()) return Promise.reject(new Error("尚未配置云端"));
+    var cfg = getCfg();
+    var s = getSess();
+    var headers = {
+      "Content-Type": "application/json",
+      "apikey": cfg.key,
+      "Authorization": "Bearer " + ((s && s.access_token) || cfg.key)
+    };
+    if (opts.prefer) headers["Prefer"] = opts.prefer;
+    return fetch(base() + path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function (r) {
+      return r.text().then(function (t) { return parse(t, r); });
+    });
+  }
+
+  function saveSession(d) {
+    if (!d || !d.access_token) return;
+    setSess({
+      access_token: d.access_token,
+      refresh_token: d.refresh_token,
+      expires_at: Date.now() + (d.expires_in || 3600) * 1000,
+      user: d.user || (getSess() && getSess().user)
+    });
+  }
+
+  return {
+    configured: configured,
+    getCfg: getCfg,
+    setCfg: setCfg,
+    user: function () {
+      var s = getSess();
+      return (s && s.user) || null;
+    },
+    signUp: function (email, password) {
+      return auth("/auth/v1/signup", { email: email, password: password }).then(function (d) {
+        if (d && d.access_token) saveSession(d);
+        return d;
+      });
+    },
+    signIn: function (email, password) {
+      return auth("/auth/v1/token?grant_type=password", { email: email, password: password }).then(function (d) {
+        saveSession(d);
+        return d;
+      });
+    },
+    refresh: function () {
+      var s = getSess();
+      if (!s || !s.refresh_token) return Promise.reject(new Error("未登录"));
+      return auth("/auth/v1/token?grant_type=refresh_token", { refresh_token: s.refresh_token }).then(function (d) {
+        saveSession(d);
+        return d;
+      });
+    },
+    signOut: function () { setSess(null); },
+    ensure: function () {
+      var s = getSess();
+      if (!s) return Promise.resolve(null);
+      if (s.expires_at && Date.now() > s.expires_at - 60000) {
+        return this.refresh().catch(function () {
+          setSess(null);
+          throw new Error("登录已过期，请重新登录");
+        });
+      }
+      return Promise.resolve(s);
+    },
+    pull: function () {
+      return req("/rest/v1/quiz_state?select=user_id,data,updated_at");
+    },
+    push: function (data) {
+      var u = this.user();
+      if (!u) return Promise.reject(new Error("未登录"));
+      return req("/rest/v1/quiz_state?on_conflict=user_id", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        body: { user_id: u.id, data: data, updated_at: new Date().toISOString() }
+      });
+    }
+  };
+})();
+
+</script>
+<script>
+/* ============================================================
    计AI · 刷题器  —  逻辑
    纯原生 JS，无依赖；进度存 localStorage
    ============================================================ */
@@ -10741,6 +10943,11 @@ window.QUESTIONS = [
   var themeBtn = document.getElementById("themeBtn");
   var themeIcon = document.getElementById("themeIcon");
   var footCount = document.getElementById("footCount");
+  var acctBtn = document.getElementById("acctBtn");
+  var acctIcon = document.getElementById("acctIcon");
+  var acctDot = document.getElementById("acctDot");
+  var modal = document.getElementById("modal");
+  var modalBody = document.getElementById("modalBody");
 
   /* ---------------- 状态 ---------------- */
   function defaultState() {
@@ -10844,6 +11051,7 @@ window.QUESTIONS = [
     if (correct) d.c += 1;
     state.days[key] = d;
     save();
+    scheduleSync();
   }
 
   /* ---------------- 工具 ---------------- */
@@ -11282,7 +11490,8 @@ window.QUESTIONS = [
       '</div>' +
       '<div class="panel"><div class="section-head" style="margin:0 0 8px"><h2 style="font-size:14px">说明</h2></div>' +
         '<div class="source-list">' +
-          '<div class="row"><span>数据存储</span><span>浏览器 localStorage，清缓存会丢</span></div>' +
+          '<div class="row"><span>账号</span><span>' + (window.Cloud && Cloud.user() ? esc(Cloud.user().email || "已登录") : "未登录 · 点右上角头像") + '</span></div>' +
+          '<div class="row"><span>数据存储</span><span>' + (window.Cloud && Cloud.user() ? "本机 + 云端合并" : "浏览器 localStorage，清缓存会丢") + '</span></div>' +
           '<div class="row"><span>联网</span><span>完全离线可用</span></div>' +
           '<div class="row"><span>部署</span><span>GitHub Pages · pine-zt/ai-quiz</span></div>' +
         '</div>' +
@@ -11404,6 +11613,44 @@ window.QUESTIONS = [
       }
       return;
     }
+    if (act === "modal-close") { closeModal(); return; }
+    if (act === "mode") {
+      acctMode = t.getAttribute("data-mode") || "signin";
+      renderModal();
+      return;
+    }
+    if (act === "cfg-save") {
+      var urlEl = document.getElementById("cfgUrl");
+      var keyEl = document.getElementById("cfgKey");
+      var url = (urlEl && urlEl.value || "").trim().replace(/\/+$/, "");
+      var key = (keyEl && keyEl.value || "").trim();
+      if (!/^https:\/\/.+/.test(url)) { formMsg("Project URL 需以 https:// 开头"); return; }
+      if (key.length < 20) { formMsg("anon key 看起来不对，请重新复制"); return; }
+      Cloud.setCfg({ url: url, key: key });
+      formMsg("已保存，可以注册或登录了", true);
+      renderModal();
+      return;
+    }
+    if (act === "cfg-reset") {
+      Cloud.signOut();
+      Cloud.setCfg({});
+      updateAcctUI();
+      renderModal();
+      return;
+    }
+    if (act === "auth-submit") { doAuth(); return; }
+    if (act === "sync-now") {
+      setSyncMsg("同步中…", true);
+      syncNow({ render: false }).then(function () { renderModal(); });
+      return;
+    }
+    if (act === "sign-out") {
+      Cloud.signOut();
+      updateAcctUI();
+      renderModal();
+      toast("已退出登录，进度仍在本机");
+      return;
+    }
   });
 
   /* ---------------- 皮肤 ---------------- */
@@ -11421,10 +11668,192 @@ window.QUESTIONS = [
     toast(state.skin === "ink" ? "已切到暗夜霓虹" : "已切到纸白");
   });
 
+  /* ---------------- 云端账号与同步 ---------------- */
+  var syncTimer = null;
+  var syncing = false;
+  var acctMode = "signin";
+
+  function cloudReady() {
+    return !!(window.Cloud && Cloud.configured() && Cloud.user());
+  }
+
+  function mergeCloud(local, cloud) {
+    var out = JSON.parse(JSON.stringify(local || {}));
+    out.attempts = out.attempts || {};
+    out.days = out.days || {};
+    if (!cloud) return out;
+    var A = cloud.attempts || {};
+    Object.keys(A).forEach(function (id) {
+      var a = A[id], b = out.attempts[id];
+      if (!b || (a.ts || 0) > (b.ts || 0)) out.attempts[id] = a;
+    });
+    var D = cloud.days || {};
+    Object.keys(D).forEach(function (k) {
+      var a = D[k], b = out.days[k];
+      if (!b) out.days[k] = a;
+      else out.days[k] = { n: Math.max(b.n || 0, a.n || 0), c: Math.max(b.c || 0, a.c || 0) };
+    });
+    out.streak = Math.max(out.streak || 0, cloud.streak || 0);
+    out.bestStreak = Math.max(out.bestStreak || 0, cloud.bestStreak || 0);
+    return out;
+  }
+
+  function payload() {
+    return {
+      attempts: state.attempts,
+      days: state.days,
+      streak: state.streak,
+      bestStreak: state.bestStreak,
+      v: 1
+    };
+  }
+
+  function syncNow(opts) {
+    opts = opts || {};
+    if (!cloudReady() || syncing) return Promise.resolve();
+    syncing = true;
+    return Cloud.ensure().then(function () {
+      return Cloud.pull().then(function (rows) {
+        var cloud = rows && rows[0] ? rows[0].data : null;
+        var merged = mergeCloud(state, cloud);
+        state.attempts = merged.attempts;
+        state.days = merged.days;
+        state.streak = merged.streak;
+        state.bestStreak = merged.bestStreak;
+        save();
+        return Cloud.push(payload());
+      });
+    }).then(function () {
+      setSyncMsg("已同步 · " + new Date().toTimeString().slice(0, 5), true);
+      if (opts.render) render();
+    }).catch(function (e) {
+      setSyncMsg((e && e.message) || "同步失败", false);
+    }).then(function () { syncing = false; });
+  }
+
+  function scheduleSync() {
+    if (!cloudReady()) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function () { syncNow({ render: false }); }, 1200);
+  }
+
+  function setSyncMsg(text, ok) {
+    var el = document.getElementById("syncMsg");
+    if (el) { el.textContent = text; el.classList.toggle("ok", !!ok); }
+  }
+
+  function escAttr(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+
+  function updateAcctUI() {
+    var u = window.Cloud ? Cloud.user() : null;
+    if (acctDot) acctDot.hidden = !u;
+    if (acctIcon) acctIcon.textContent = u && u.email ? u.email.charAt(0).toUpperCase() : "☺";
+    if (acctBtn) acctBtn.title = u && u.email ? "已登录：" + u.email : "账号与同步";
+  }
+
+  function openModal() {
+    if (!modal) return;
+    modal.hidden = false;
+    renderModal();
+  }
+
+  function closeModal() {
+    if (modal) modal.hidden = true;
+  }
+
+  function formMsg(text, ok) {
+    var el = document.getElementById("formMsg");
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("ok", !!ok);
+  }
+
+  function renderModal() {
+    if (!modalBody) return;
+    var cfg = window.Cloud ? Cloud.getCfg() : {};
+    var u = window.Cloud ? Cloud.user() : null;
+    var html = "";
+
+    if (!window.Cloud || !Cloud.configured()) {
+      html =
+        '<p class="modal-note">填一次 Supabase 项目的地址和 anon key，就能注册 / 登录，并在不同设备之间合并进度。数据存在你自己的项目里，只有本人能读写。</p>' +
+        '<label class="field"><b>Project URL</b><input id="cfgUrl" placeholder="https://xxxx.supabase.co" value="' + escAttr(cfg.url) + '"></label>' +
+        '<label class="field"><b>anon public key</b><input id="cfgKey" placeholder="eyJhbGciOiJIUzI1NiIs..." value="' + escAttr(cfg.key) + '"></label>' +
+        '<div class="form-msg" id="formMsg"></div>' +
+        '<div class="modal-actions"><button class="btn btn-primary" data-act="cfg-save">保存</button></div>' +
+        '<p class="modal-note" style="margin-top:12px">在 Supabase 控制台 Project Settings → API 复制这两个值。anon key 是公开密钥，放在网页里没问题。</p>';
+    } else if (!u) {
+      html =
+        '<div class="seg">' +
+          '<button class="' + (acctMode === "signin" ? "on" : "") + '" data-act="mode" data-mode="signin">登录</button>' +
+          '<button class="' + (acctMode === "signup" ? "on" : "") + '" data-act="mode" data-mode="signup">注册</button>' +
+        '</div>' +
+        '<p class="modal-note">' + (acctMode === "signin" ? "用邮箱和密码登录，登录后会把云端进度和本机进度合并。" : "注册后若没收到确认邮件，先看垃圾邮件；也可以回 Supabase 关掉邮件确认。") + '</p>' +
+        '<label class="field"><b>邮箱</b><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>' +
+        '<label class="field"><b>密码</b><input id="authPw" type="password" autocomplete="' + (acctMode === "signin" ? "current-password" : "new-password") + '" placeholder="至少 6 位"></label>' +
+        '<div class="form-msg" id="formMsg"></div>' +
+        '<div class="modal-actions"><button class="btn btn-primary" data-act="auth-submit">' + (acctMode === "signin" ? "登录" : "注册") + '</button></div>' +
+        '<p class="modal-note" style="margin-top:10px"><button class="link-btn" data-act="cfg-reset">重新配置云端</button> · 不登录时进度只存在本机</p>';
+    } else {
+      html =
+        '<div class="acct-box"><div class="acct-mail">' + esc(u.email || "已登录") + '</div>' +
+        '<div class="acct-sub" id="syncMsg">登录后会自动合并各设备的进度</div></div>' +
+        '<div class="acct-row"><button class="btn btn-primary" data-act="sync-now">立即同步</button>' +
+        '<button class="btn btn-ghost" data-act="sign-out">退出登录</button></div>' +
+        '<p class="modal-note" style="margin-top:12px">数据存在你自己的 Supabase 项目（quiz_state 表）里，只有本人能读写。</p>';
+    }
+    modalBody.innerHTML = html;
+  }
+
+  function doAuth() {
+    var emailEl = document.getElementById("authEmail");
+    var pwEl = document.getElementById("authPw");
+    var email = (emailEl && emailEl.value || "").trim();
+    var pw = (pwEl && pwEl.value || "");
+    if (!email || !pw) { formMsg("请填写邮箱和密码"); return; }
+    formMsg("处理中…", true);
+    var p = acctMode === "signin" ? Cloud.signIn(email, pw) : Cloud.signUp(email, pw);
+    p.then(function (res) {
+      if (acctMode === "signup" && !Cloud.user()) {
+        formMsg("注册成功，请到邮箱点确认链接后再登录", true);
+        return;
+      }
+      formMsg("登录成功，正在同步…", true);
+      updateAcctUI();
+      return syncNow({ render: false }).then(function () {
+        closeModal();
+        render();
+        toast("已登录，进度已合并");
+      });
+    }).catch(function (e) {
+      formMsg((e && e.message) || "操作失败");
+    });
+  }
+
+  if (acctBtn) acctBtn.addEventListener("click", openModal);
+  if (modal) {
+    modal.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && (e.target.id === "authEmail" || e.target.id === "authPw")) {
+        e.preventDefault();
+        doAuth();
+      }
+    });
+  }
+
   /* ---------------- 启动 ---------------- */
   applySkin(state.skin || "ink");
+  updateAcctUI();
   if (footCount) footCount.textContent = QUESTIONS.length + " 道题 · " + CHAPTERS.length + " 个讲次";
   window.addEventListener("hashchange", render);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && cloudReady()) syncNow({ render: false });
+  });
+  window.addEventListener("online", function () {
+    if (cloudReady()) syncNow({ render: false });
+  });
+  if (cloudReady()) syncNow({ render: false });
   render();
 })();
 
