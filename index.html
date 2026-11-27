@@ -11162,8 +11162,61 @@ window.Cloud = (function () {
   }
 
   /* ---------------- 会话 ---------------- */
-  var session = null;   // { ids, idx, title, mode, picked, graded }
+  var session = null;   // { key, ids, idx, title, mode, picked, graded, results }
   var resultData = null;
+
+  /* 练习进度：按 key 存在本机，退出/刷新后能接着做 */
+  var RESUME_KEY = "aiq.resume";
+
+  function loadResumes() {
+    try {
+      var o = JSON.parse(localStorage.getItem(RESUME_KEY) || "{}");
+      return o && typeof o === "object" ? o : {};
+    } catch (e) { return {}; }
+  }
+
+  function resumeFor(key) {
+    if (!key) return null;
+    var r = loadResumes()[key];
+    if (!r || !r.ids || !r.ids.length || r.idx >= r.ids.length) return null;
+    return r;
+  }
+
+  function saveResume() {
+    if (!session || !session.key) return;
+    var o = loadResumes();
+    o[session.key] = {
+      ids: session.ids, idx: session.idx, title: session.title, mode: session.mode,
+      picked: session.picked, graded: session.graded, results: session.results, ts: Date.now()
+    };
+    var keys = Object.keys(o).sort(function (a, b) { return (o[b].ts || 0) - (o[a].ts || 0); });
+    keys.slice(8).forEach(function (k) { delete o[k]; });
+    try { localStorage.setItem(RESUME_KEY, JSON.stringify(o)); } catch (e) {}
+  }
+
+  function dropResume(key) {
+    if (!key) return;
+    var o = loadResumes();
+    delete o[key];
+    try { localStorage.setItem(RESUME_KEY, JSON.stringify(o)); } catch (e) {}
+  }
+
+  function latestResume() {
+    var o = loadResumes(), best = null;
+    Object.keys(o).forEach(function (k) {
+      var r = o[k];
+      if (!r || !r.ids || r.idx >= r.ids.length) return;
+      if (!best || (r.ts || 0) > (best.ts || 0)) { r.key = k; best = r; }
+    });
+    return best;
+  }
+
+  function resumeBtn() {
+    var r = latestResume();
+    if (!r) return "";
+    return '<button class="btn btn-ghost" data-act="resume" data-key="' + esc(r.key) + '">继续上次：' +
+      esc(r.title) + '（' + (r.idx + 1) + '/' + r.ids.length + '）</button>';
+  }
 
   function shuffle(arr) {
     var a = arr.slice();
@@ -11174,10 +11227,23 @@ window.Cloud = (function () {
     return a;
   }
 
-  function startSession(ids, title, mode) {
+  function startSession(ids, title, mode, key) {
     if (!ids.length) { toast("这里还没有题目"); return; }
-    session = { ids: ids, idx: 0, title: title, mode: mode || "practice", picked: [], graded: false, results: [] };
+    key = key || "";
+    var r = key ? resumeFor(key) : null;
+    if (r) {
+      session = {
+        key: key, ids: r.ids, idx: r.idx, title: r.title, mode: r.mode || mode || "practice",
+        picked: r.picked || [], graded: !!r.graded, results: r.results || []
+      };
+      resultData = null;
+      toast("接着上次 · 第 " + (session.idx + 1) + " 题");
+      go("/quiz");
+      return;
+    }
+    session = { key: key, ids: ids, idx: 0, title: title, mode: mode || "practice", picked: [], graded: false, results: [] };
     resultData = null;
+    saveResume();
     go("/quiz");
   }
 
@@ -11270,6 +11336,7 @@ window.Cloud = (function () {
         '<div class="hero-actions">' +
           '<button class="btn btn-primary" data-act="start-smart">开始智能练习 →</button>' +
           '<button class="btn btn-ghost" data-act="start-review">重练错题' + (wrong ? '（' + wrong + '）' : '') + '</button>' +
+          resumeBtn() +
         '</div>' +
       '</section>' +
 
@@ -11318,7 +11385,7 @@ window.Cloud = (function () {
           '<div class="item"><div class="k">错题待复习</div><div class="v">' + wrongIds().length + '</div></div>' +
         '</div>' +
         '<div class="actions"><button class="btn btn-primary" data-act="start-smart">智能练习（10 题）</button>' +
-        '<button class="btn btn-ghost" data-act="start-review">重练错题</button></div>' +
+        '<button class="btn btn-ghost" data-act="start-review">重练错题</button>' + resumeBtn() + '</div>' +
       '</div>' +
       '<div class="section-head"><h2>按章练习</h2><span class="hint">共 ' + CHAPTERS.length + ' 个讲次</span></div>' +
       '<div class="chapter-grid">' + cards + '</div>';
@@ -11430,6 +11497,7 @@ window.Cloud = (function () {
     var ok = isCorrect(q, session.picked);
     record(q.id, ok);
     session.results.push({ id: q.id, ok: ok });
+    saveResume();
     renderQuiz();
   }
 
@@ -11439,13 +11507,14 @@ window.Cloud = (function () {
     session.picked = [];
     session.graded = false;
     if (session.idx >= session.ids.length) finishSession();
-    else renderQuiz();
+    else { saveResume(); renderQuiz(); }
   }
 
   function finishSession() {
     var total = session.results.length;
     var right = session.results.filter(function (r) { return r.ok; }).length;
     resultData = { total: total, right: right, wrong: session.results.filter(function (r) { return !r.ok; }) };
+    dropResume(session.key);
     session = null;
     go("/result");
   }
@@ -11652,20 +11721,28 @@ window.Cloud = (function () {
     // 深链接：直接带参数开始练习（#/quiz?ch=2-1 / #/quiz?smart=1 / #/quiz?q=题目id）
     if (path === "/quiz" && !session) {
       if (params.q && QMAP[params.q]) {
-        startSession([params.q], "单题练习", "single");
+        startSession([params.q], "单题练习", "single", "q:" + params.q);
         return;
       }
       if (params.ch) {
         var chOk = CHAPTERS.some(function (c) { return c.id === params.ch; });
         if (chOk) {
           var c0 = CHAPTERS.filter(function (c) { return c.id === params.ch; })[0];
-          startSession(chapterIds(params.ch), c0.short + " · 按章练习", "chapter");
+          startSession(chapterIds(params.ch), c0.short + " · 按章练习", "chapter", "ch:" + params.ch);
           return;
         }
       }
       if (params.smart) {
-        startSession(smartIds(10), "智能练习", "smart");
+        startSession(smartIds(10), "智能练习", "smart", "smart");
         return;
+      }
+      // 刷新或直接打开 /quiz：接着最近一次进度
+      var saved = latestResume();
+      if (saved) {
+        session = {
+          key: saved.key, ids: saved.ids, idx: saved.idx, title: saved.title, mode: saved.mode || "practice",
+          picked: saved.picked || [], graded: !!saved.graded, results: saved.results || []
+        };
       }
     }
 
@@ -11711,6 +11788,7 @@ window.Cloud = (function () {
     } else {
       session.picked = [i];
     }
+    saveResume();
     renderQuiz();
   }
 
@@ -11723,24 +11801,36 @@ window.Cloud = (function () {
     if (act === "opt") { toggleOption(parseInt(t.getAttribute("data-i"), 10)); return; }
     if (act === "submit") { submitAnswer(); return; }
     if (act === "next") { nextQuestion(); return; }
-    if (act === "quit") { session = null; go("/practice"); return; }
+    if (act === "quit") { saveResume(); session = null; go("/practice"); return; }
     if (act === "home") { go("/home"); return; }
-    if (act === "start-smart") { startSession(smartIds(10), "智能练习", "smart"); return; }
+    if (act === "start-smart") { startSession(smartIds(10), "智能练习", "smart", "smart"); return; }
     if (act === "start-ch") {
       var ch = t.getAttribute("data-ch");
       var c = CHAPTERS.filter(function (x) { return x.id === ch; })[0];
-      startSession(chapterIds(ch), c ? c.short + " · 按章练习" : "按章练习", "chapter");
+      startSession(chapterIds(ch), c ? c.short + " · 按章练习" : "按章练习", "chapter", "ch:" + ch);
       return;
     }
     if (act === "start-review") {
       var ids = wrongIds();
       if (!ids.length) { toast("错题本是空的"); return; }
-      startSession(shuffle(ids), "错题重练", "review");
+      startSession(shuffle(ids), "错题重练", "review", "review");
       return;
     }
     if (act === "start-q") {
       var qid = t.getAttribute("data-q");
-      if (qid && QMAP[qid]) startSession([qid], "单题重做", "single");
+      if (qid && QMAP[qid]) startSession([qid], "单题重做", "single", "q:" + qid);
+      return;
+    }
+    if (act === "resume") {
+      var rk = t.getAttribute("data-key");
+      var rr = rk ? resumeFor(rk) : latestResume();
+      if (!rr) { toast("没有未完成的练习"); return; }
+      session = {
+        key: rk || rr.key, ids: rr.ids, idx: rr.idx, title: rr.title, mode: rr.mode || "practice",
+        picked: rr.picked || [], graded: !!rr.graded, results: rr.results || []
+      };
+      resultData = null;
+      go("/quiz");
       return;
     }
     if (act === "reset") {
@@ -11996,17 +12086,33 @@ window.Cloud = (function () {
     });
   }
 
+  var cloudLookTs = 0;
+  var lookPushed = false;
+
   function pullLookNow() {
     if (!cloudReady() || !window.Cloud || !Cloud.pullLook) return Promise.resolve();
     return Cloud.pullLook().then(function (rows) {
       var row = rows && rows[0];
-      if (!row || !row.img) return;
-      if ((row.ts || 0) > (((state.look && state.look.ts) || 0))) {
-        state.look = { img: row.img, ts: row.ts };
+      if (!row) return;
+      cloudLookTs = row.ts || 0;
+      if (row.img && cloudLookTs > (((state.look && state.look.ts) || 0))) {
+        state.look = { img: row.img, ts: cloudLookTs };
         save();
         applyLook();
       }
     }).catch(function () { /* 忽略：老项目可能还没建表 */ });
+  }
+
+  function pushLookIfNewer() {
+    if (!cloudReady() || !window.Cloud || !Cloud.pushLook) return Promise.resolve();
+    var look = state.look || { img: "", ts: 0 };
+    if ((look.ts || 0) <= cloudLookTs) return Promise.resolve();
+    return Cloud.pushLook(look.img || "", look.ts || 0).then(function () {
+      cloudLookTs = look.ts || 0;
+      lookPushed = true;
+    }).catch(function (e) {
+      setSyncMsg("背景同步失败：" + ((e && e.message) || "未知错误"), false);
+    });
   }
 
   function cloudReady() {
@@ -12069,6 +12175,7 @@ window.Cloud = (function () {
     if (!cloudReady() || syncing) return Promise.resolve();
     syncing = true;
     var cloudCount = 0;
+    lookPushed = false;
     return Cloud.ensure().then(function () {
       return pullLookNow();
     }).then(function () {
@@ -12082,10 +12189,12 @@ window.Cloud = (function () {
         state.bestStreak = merged.bestStreak;
         state.profile = merged.profile || state.profile || {};
         save();
-        return Cloud.push(payload());
+        return Cloud.push(payload()).then(function () {
+          return pushLookIfNewer();
+        });
       });
     }).then(function () {
-      setSyncMsg("已同步 · 云端 " + cloudCount + " 题 · " + new Date().toTimeString().slice(0, 5), true);
+      setSyncMsg("已同步 · 云端 " + cloudCount + " 题" + (lookPushed ? " · 背景已上传" : "") + " · " + new Date().toTimeString().slice(0, 5), true);
       if (opts.render) render();
     }).catch(function (e) {
       setSyncMsg((e && e.message) || "同步失败", false);
