@@ -11233,6 +11233,8 @@ window.Cloud = (function () {
 
   function saveResume() {
     if (!session || !session.key) return;
+    var answered = session.graded || (session.picked && session.picked.length) || session.idx > 0;
+    if (!answered) return;
     var o = loadResumes();
     o[session.key] = {
       ids: session.ids, idx: session.idx, title: session.title, mode: session.mode,
@@ -11297,7 +11299,6 @@ window.Cloud = (function () {
     }
     session = { key: key, ids: ids, idx: 0, title: title, mode: mode || "practice", picked: [], graded: false, results: [] };
     resultData = null;
-    saveResume();
     go("/quiz");
   }
 
@@ -12222,7 +12223,11 @@ window.Cloud = (function () {
       var a = out.resume[k], b = R[k];
       if (!b) return;
       if (!a) { out.resume[k] = b; return; }
-      var win = ((b.ts || 0) > (a.ts || 0)) ? b : a;
+      var wa = a.ts || 0, wb = b.ts || 0;
+      var win = (wb > wa) ? b : a;
+      var other = (win === a) ? b : a;
+      if (win.ids && win.ids.length && other && other.ids && other.ids.length
+        && (other.idx || 0) > (win.idx || 0)) win = other;
       if (!win.ids || !win.ids.length) delete out.resume[k];
       else out.resume[k] = win;
     });
