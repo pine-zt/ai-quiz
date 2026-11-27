@@ -11199,6 +11199,8 @@ window.Cloud = (function () {
   /* ---------------- 会话 ---------------- */
   var session = null;   // { key, ids, idx, title, mode, picked, graded, results }
   var resultData = null;
+  var initialSync = null;
+  var initialSyncDone = false;
 
   /* 练习进度：按 key 存在本机，退出/刷新后能接着做 */
   var RESUME_KEY = "aiq.resume";
@@ -11217,6 +11219,18 @@ window.Cloud = (function () {
     return r;
   }
 
+  function writeResumes(o) {
+    o = o || {};
+    if (typeof o !== "object") o = {};
+    var now = Date.now();
+    Object.keys(o).forEach(function (k) {
+      if (o[k] && o[k].deleted && now - (o[k].ts || 0) > 7 * 864e5) delete o[k];
+    });
+    var keys = Object.keys(o).sort(function (a, b) { return (o[b].ts || 0) - (o[a].ts || 0); });
+    keys.slice(8).forEach(function (k) { delete o[k]; });
+    try { localStorage.setItem(RESUME_KEY, JSON.stringify(o)); } catch (e) {}
+  }
+
   function saveResume() {
     if (!session || !session.key) return;
     var o = loadResumes();
@@ -11224,16 +11238,16 @@ window.Cloud = (function () {
       ids: session.ids, idx: session.idx, title: session.title, mode: session.mode,
       picked: session.picked, graded: session.graded, results: session.results, ts: Date.now()
     };
-    var keys = Object.keys(o).sort(function (a, b) { return (o[b].ts || 0) - (o[a].ts || 0); });
-    keys.slice(8).forEach(function (k) { delete o[k]; });
-    try { localStorage.setItem(RESUME_KEY, JSON.stringify(o)); } catch (e) {}
+    writeResumes(o);
+    scheduleSync();
   }
 
   function dropResume(key) {
     if (!key) return;
     var o = loadResumes();
-    delete o[key];
-    try { localStorage.setItem(RESUME_KEY, JSON.stringify(o)); } catch (e) {}
+    o[key] = { ids: [], ts: Date.now(), deleted: 1 };
+    writeResumes(o);
+    scheduleSync();
   }
 
   function latestResume() {
@@ -11264,6 +11278,11 @@ window.Cloud = (function () {
 
   function startSession(ids, title, mode, key) {
     if (!ids.length) { toast("这里还没有题目"); return; }
+    if (!initialSyncDone && initialSync) {
+      toast("正在同步云端进度，约一秒后再点一次");
+      initialSync.then(function () { render(); });
+      return;
+    }
     key = key || "";
     var r = key ? resumeFor(key) : null;
     if (r) {
@@ -12194,6 +12213,19 @@ window.Cloud = (function () {
       out.profile.avatar = av;
       out.profile.avatarTs = avTs;
     }
+    out.resume = out.resume || loadResumes();
+    var R = cloud.resume || {};
+    var rkeys = {};
+    Object.keys(out.resume).forEach(function (k) { rkeys[k] = 1; });
+    Object.keys(R).forEach(function (k) { rkeys[k] = 1; });
+    Object.keys(rkeys).forEach(function (k) {
+      var a = out.resume[k], b = R[k];
+      if (!b) return;
+      if (!a) { out.resume[k] = b; return; }
+      var win = ((b.ts || 0) > (a.ts || 0)) ? b : a;
+      if (!win.ids || !win.ids.length) delete out.resume[k];
+      else out.resume[k] = win;
+    });
     return out;
   }
 
@@ -12209,6 +12241,7 @@ window.Cloud = (function () {
         name: (state.profile && state.profile.name) || "",
         nameTs: (state.profile && state.profile.nameTs) || 0
       },
+      resume: loadResumes(),
       v: 1
     };
   }
@@ -12218,6 +12251,7 @@ window.Cloud = (function () {
     if (!cloudReady() || syncing) return Promise.resolve();
     syncing = true;
     var cloudCount = 0;
+    var resumeChanged = false;
     lookPushed = false;
     return Cloud.ensure().then(function () {
       return pullLookNow();
@@ -12231,6 +12265,9 @@ window.Cloud = (function () {
         state.streak = merged.streak;
         state.bestStreak = merged.bestStreak;
         state.profile = merged.profile || state.profile || {};
+        var beforeR = JSON.stringify(loadResumes());
+        writeResumes(merged.resume || loadResumes());
+        resumeChanged = JSON.stringify(loadResumes()) !== beforeR;
         save();
         return Cloud.push(payload()).then(function () {
           return pushLookIfNewer();
@@ -12238,7 +12275,7 @@ window.Cloud = (function () {
       });
     }).then(function () {
       setSyncMsg("已同步 · 云端 " + cloudCount + " 题" + (lookPushed ? " · 背景已上传" : "") + " · " + new Date().toTimeString().slice(0, 5), true);
-      if (opts.render) render();
+      if (opts.render || (resumeChanged && /^#\/(home|practice)/.test(String(location.hash || "#/home")))) render();
     }).catch(function (e) {
       setSyncMsg((e && e.message) || "同步失败", false);
     }).then(function () { syncing = false; });
@@ -12515,7 +12552,11 @@ window.Cloud = (function () {
   window.addEventListener("online", function () {
     if (cloudReady()) syncNow({ render: false });
   });
-  if (cloudReady()) syncNow({ render: false });
+  if (cloudReady()) {
+    initialSync = syncNow({ render: false }).then(function () { initialSyncDone = true; });
+  } else {
+    initialSyncDone = true;
+  }
   render();
 })();
 
