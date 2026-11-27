@@ -355,6 +355,15 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
   position: relative;
   overflow: hidden;
 }
+.ch-resume {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 6px; font-size: 11.5px; color: var(--accent-2);
+}
+.linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--accent); font: inherit; font-size: 11.5px;
+  text-decoration: underline; text-underline-offset: 2px;
+}
 .chapter-card:hover { background: var(--panel-hover); border-color: var(--line-strong); transform: translateY(-2px); }
 
 .ch-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
@@ -11211,11 +11220,11 @@ window.Cloud = (function () {
     return best;
   }
 
-  function resumeBtn() {
-    var r = latestResume();
+  function resumeLine(ch) {
+    var r = resumeFor("ch:" + ch);
     if (!r) return "";
-    return '<button class="btn btn-ghost" data-act="resume" data-key="' + esc(r.key) + '">继续上次：' +
-      esc(r.title) + '（' + (r.idx + 1) + '/' + r.ids.length + '）</button>';
+    return '<div class="ch-resume">上次做到 ' + (r.idx + 1) + '/' + r.ids.length +
+      '<button class="linkbtn" data-act="restart-ch" data-ch="' + esc(ch) + '">重新开始</button></div>';
   }
 
   function shuffle(arr) {
@@ -11324,6 +11333,7 @@ window.Cloud = (function () {
           '<div class="ch-desc" style="margin:8px 0 0;font-size:11.5px">' +
             (s.done ? '正确率 ' + pct(s.acc) + ' · 已做 ' + s.done + ' 次' : '未开始') +
           '</div>' +
+          resumeLine(c.id) +
         '</div>'
       );
     }).join("");
@@ -11336,7 +11346,6 @@ window.Cloud = (function () {
         '<div class="hero-actions">' +
           '<button class="btn btn-primary" data-act="start-smart">开始智能练习 →</button>' +
           '<button class="btn btn-ghost" data-act="start-review">重练错题' + (wrong ? '（' + wrong + '）' : '') + '</button>' +
-          resumeBtn() +
         '</div>' +
       '</section>' +
 
@@ -11372,6 +11381,7 @@ window.Cloud = (function () {
           '<div class="ch-desc" style="margin:8px 0 0;font-size:11.5px">' +
             (s.done ? '正确率 ' + pct(s.acc) + ' · 已做 ' + s.done + ' 次' : '未开始') +
           '</div>' +
+          resumeLine(c.id) +
         '</div>'
       );
     }).join("");
@@ -11385,7 +11395,7 @@ window.Cloud = (function () {
           '<div class="item"><div class="k">错题待复习</div><div class="v">' + wrongIds().length + '</div></div>' +
         '</div>' +
         '<div class="actions"><button class="btn btn-primary" data-act="start-smart">智能练习（10 题）</button>' +
-        '<button class="btn btn-ghost" data-act="start-review">重练错题</button>' + resumeBtn() + '</div>' +
+        '<button class="btn btn-ghost" data-act="start-review">重练错题</button></div>' +
       '</div>' +
       '<div class="section-head"><h2>按章练习</h2><span class="hint">共 ' + CHAPTERS.length + ' 个讲次</span></div>' +
       '<div class="chapter-grid">' + cards + '</div>';
@@ -11804,6 +11814,13 @@ window.Cloud = (function () {
     if (act === "quit") { saveResume(); session = null; go("/practice"); return; }
     if (act === "home") { go("/home"); return; }
     if (act === "start-smart") { startSession(smartIds(10), "智能练习", "smart", "smart"); return; }
+    if (act === "restart-ch") {
+      var rch = t.getAttribute("data-ch");
+      dropResume("ch:" + rch);
+      var rc = CHAPTERS.filter(function (x) { return x.id === rch; })[0];
+      startSession(chapterIds(rch), rc ? rc.short + " · 按章练习" : "按章练习", "chapter", "ch:" + rch);
+      return;
+    }
     if (act === "start-ch") {
       var ch = t.getAttribute("data-ch");
       var c = CHAPTERS.filter(function (x) { return x.id === ch; })[0];
